@@ -53,6 +53,70 @@ function escapeHTML(str) {
 }
 
 /* ======================
+   Year Generation Helper
+   ====================== */
+function generateYearSequence(startingYear = 2025) {
+    const historyRows = document.querySelectorAll('#hourHistoryBody tr');
+    const usedYears = new Set();
+    
+    // Collect all currently used years
+    historyRows.forEach(row => {
+        const yearInput = row.querySelector('.history-year');
+        if (yearInput && yearInput.value) {
+            usedYears.add(parseInt(yearInput.value));
+        }
+    });
+    
+    // Find the next available year (starting from startingYear and going backwards)
+    let nextYear = startingYear;
+    while (usedYears.has(nextYear) && nextYear > 2000) {
+        nextYear--;
+    }
+    
+    return nextYear;
+}
+
+function reorganizeYears() {
+    const historyRows = document.querySelectorAll('#hourHistoryBody tr');
+    const years = [];
+    
+    // Collect all current year values
+    historyRows.forEach(row => {
+        const yearInput = row.querySelector('.history-year');
+        if (yearInput && yearInput.value) {
+            years.push(parseInt(yearInput.value));
+        }
+    });
+    
+    // If we have duplicate years, fix them
+    const uniqueYears = new Set(years);
+    if (years.length !== uniqueYears.size) {
+        // We have duplicates, need to reassign
+        let nextYear = 2025;
+        historyRows.forEach(row => {
+            const yearInput = row.querySelector('.history-year');
+            if (yearInput) {
+                // Skip if this year is already unique and valid
+                if (yearInput.value && uniqueYears.has(parseInt(yearInput.value)) && 
+                    !Array.from(uniqueYears).filter(y => y === parseInt(yearInput.value)).length > 1) {
+                    uniqueYears.delete(parseInt(yearInput.value));
+                    return;
+                }
+                
+                // Find next available year
+                while (uniqueYears.has(nextYear) && nextYear > 2000) {
+                    nextYear--;
+                }
+                
+                yearInput.value = nextYear;
+                uniqueYears.add(nextYear);
+                nextYear--;
+            }
+        });
+    }
+}
+
+/* ======================
    Primary Data Rendering
    ====================== */
 function renderAllTables() {
@@ -257,9 +321,11 @@ function openEditCompleted(id) {
     const historyBody = document.getElementById('hourHistoryBody');
     historyBody.innerHTML = '';
     if (item.hoursHistory && item.hoursHistory.length > 0) {
-        item.hoursHistory.forEach(h => addHourHistoryRow(h));
+        // Sort history by year descending before adding rows
+        const sortedHistory = [...item.hoursHistory].sort((a, b) => b.year - a.year);
+        sortedHistory.forEach(h => addHourHistoryRow(h));
     } else {
-        addHourHistoryRow(); // Add at least one row
+        addHourHistoryRow(); // Add at least one row with current year
     }
 
     document.getElementById('completedModalTitle').textContent = 'Edit Completed Inspection';
@@ -286,14 +352,25 @@ function openEditOngoing(id) {
 
 function addHourHistoryRow(data = {}) {
     const row = document.createElement('tr');
+    
+    // Determine the year value - use provided data or generate next in sequence
+    let yearValue = data.year || '';
+    if (!yearValue) {
+        yearValue = generateYearSequence();
+    }
+    
     row.innerHTML = `
-        <td><input type="number" class="history-year" placeholder="Year" value="${data.year || ''}" min="2000" max="2100" required></td>
+        <td><input type="number" class="history-year" placeholder="Year" value="${yearValue}" min="2000" max="2100" required></td>
         <td><input type="number" step="0.1" class="history-bid" placeholder="Bid Hrs" value="${data.bid || ''}" min="0" required></td>
         <td><input type="number" step="0.1" class="history-actual" placeholder="Actual Hrs" value="${data.actual || ''}" min="0" required></td>
         <td><input type="number" step="0.01" class="history-bid-price" placeholder="Bid Price $" value="${data.bidPrice || ''}" min="0" required></td>
-        <td class="no-pdf"><button type="button" class="btn-danger" onclick="this.closest('tr').remove()">X</button></td>
+        <td class="no-pdf"><button type="button" class="btn-danger" onclick="this.closest('tr').remove(); reorganizeYears()">X</button></td>
     `;
     document.getElementById('hourHistoryBody').appendChild(row);
+    
+    // Add event listener to update years when this field changes
+    const yearInput = row.querySelector('.history-year');
+    yearInput.addEventListener('change', reorganizeYears);
 }
 
 function saveCompleted(event) {
